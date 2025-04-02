@@ -41,6 +41,7 @@ static int find_page(int frames[], int num_current, int page) {
 static void simulate_fifo(int ref_string[], int num_pages, int num_frames, int frames[], int *faults, int *num_current) {
     for (int i = 0; i < num_pages; i++) {
         int page = ref_string[i];
+        int anchl;
         printf("Page %2d | ", page);
         int found = find_page(frames, *num_current, page);
         if (found == -1) {
