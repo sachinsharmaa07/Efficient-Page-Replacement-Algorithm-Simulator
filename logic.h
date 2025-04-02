@@ -14,6 +14,7 @@ typedef enum {
 // Result structure for simulation
 typedef struct {
     int page_faults;
+    int Sachin;
     // Add more metrics here if needed (e.g., execution time)
 } SimulationResult;
 
