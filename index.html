@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Page Replacement Algorithms Visualization</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #e0e7ff, #fef3c7);
+            min-height: 100vh;
+        }
+        .card {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        .btn {
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+        .btn:hover:not(:disabled) {
+            transform: scale(1.05);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        canvas {
+            border: 2px solid #4b5563;
+            border-radius: 0.5rem;
+            background: #f9fafb;
+        }
+        .frame-box {
+            transition: all 0.5s ease;
+        }
+        .fault { background-color: #fee2e2; }
+        .hit { background-color: #d1fae5; }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        input[type="range"] {
+            accent-color: #3b82f6;
+        }
+    </style>
+</head>
+<body class="font-sans text-gray-800">
+    <div class="container mx-auto p-6 max-w-4xl">
+        <h1 class="text-4xl font-extrabold text-center mb-8 text-gray-900">Page Replacement Algorithms Visualization</h1>
+
+        <!-- Input Section -->
+        <div class="card p-6 mb-8">
+            <h2 class="text-2xl font-semibold mb-4">Input Parameters</h2>
+            <div class="mb-4">
+                <label class="block text-gray-700 font-medium mb-1">Reference String (space-separated numbers):</label>
+                <input id="refString" type="text" value="7 0 1 2 0 3 0 4 2 3 0 3 2" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="mb-6">
+                <label class="block text-gray-700 font-medium mb-1">Number of Frames (1-10):</label>
+                <input id="numFrames" type="number" min="1" max="10" value="4" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex flex-wrap gap-4">
+                <button onclick="runSimulation('FIFO')" class="btn bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">Run FIFO</button>
+                <button onclick="runSimulation('LRU')" class="btn bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">Run LRU</button>
+                <button onclick="runSimulation('OPTIMAL')" class="btn bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700">Run Optimal</button>
+                <button onclick="resetSimulation()" class="btn bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700">Reset</button>
+            </div>
+        </div>
+
+        <!-- Visualization Section -->
+        <div class="card p-6 mb-8">
+            <h2 class="text-2xl font-semibold mb-4">Simulation Visualization</h2>
+            <canvas id="canvas" width="600" height="150" class="mx-auto"></canvas>
+            <div class="mt-6 text-center">
+                <p id="status" class="text-lg font-medium text-gray-700 mb-4">Enter inputs and click a button to start</p>
+                <div class="flex justify-center items-center gap-4">
+                    <button id="prevStep" onclick="prevStep()" class="btn bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 hidden">Previous</button>
+                    <input id="stepSlider" type="range" min="0" max="0" value="0" class="w-64" onchange="updateStep(this.value)">
+                    <button id="nextStep" onclick="nextStep()" class="btn bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 hidden">Next</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div class="card p-6">
+            <h2 class="text-2xl font-semibold mb-4">Simulation Results</h2>
+            <table id="resultsTable" class="w-full border-collapse text-center">
+                <thead>
+                    <tr class="bg-gray-100">
+                        <th class="border p-3 font-semibold">Algorithm</th>
+                        <th class="border p-3 font-semibold">Page Faults</th>
+                        <th class="border p-3 font-semibold">Hit Ratio (%)</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        let simulationSteps = [];
+        let currentStep = -1;
+        let refString = [];
+        let numFrames = 4;
+
+        // Draw memory state
+        function drawMemory(frames, numFrames, page, isFault) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Draw frames
+            for (let i = 0; i < numFrames; i++) {
+                ctx.fillStyle = (i >= frames.length || frames[i] === -1) ? '#e5e7eb' : '#ffffff';
+                ctx.fillRect(i * 70 + 20, 20, 60, 60);
+                ctx.strokeStyle = '#4b5563';
+                ctx.strokeRect(i * 70 + 20, 20, 60, 60);
+                if (i < frames.length && frames[i] !== -1) {
+                    ctx.fillStyle = '#1f2937';
+                    ctx.fillText(frames[i], i * 70 + 50, 50);
+                }
+            }
+
+            // Draw current page and status
+            ctx.fillStyle = isFault ? '#fee2e2' : '#d1fae5';
+            ctx.fillRect(20, 100, 80, 30);
+            ctx.fillStyle = '#1f2937';
+            ctx.fillText(`Page: ${page}`, 60, 115);
+            ctx.fillText(isFault ? 'Fault' : 'Hit', 150, 115);
+        }
+
+        // Find page in frames
+        function findPage(frames, numCurrent, page) {
+            return frames.slice(0, numCurrent).indexOf(page);
+        }
+
+        // FIFO Simulation
+        function simulateFIFO(refString, numPages, numFrames) {
+            let frames = Array(numFrames).fill(-1);
+            let faults = 0, numCurrent = 0;
+            let steps = [];
+
+            for (let i = 0; i < numPages; i++) {
+                let page = refString[i];
+                let found = findPage(frames, numCurrent, page);
+                let isFault = found === -1;
+
+                if (found === -1) {
+                    if (numCurrent < numFrames) {
+                        frames[numCurrent++] = page;
+                    } else {
+                        frames = [...frames.slice(1), page];
+                    }
+                    faults++;
+                }
+                steps.push({ frames: [...frames], page, isFault });
+            }
+
+            return { faults, steps };
+        }
+
+        // LRU Simulation
+        function simulateLRU(refString, numPages, numFrames) {
+            let frames = Array(numFrames).fill(-1);
+            let useTime = Array(numFrames).fill(0);
+            let faults = 0, numCurrent = 0;
+            let steps = [];
+
+            for (let i = 0; i < numPages; i++) {
+                let page = refString[i];
+                let found = findPage(frames, numCurrent, page);
+                let isFault = found === -1;
+
+                if (found !== -1) {
+                    useTime[found] = i + 1;
+                } else {
+                    let victim = 0;
+                    if (numCurrent < numFrames) {
+                        victim = numCurrent++;
+                    } else {
+                        let minTime = useTime[0];
+                        for (let j = 1; j < numFrames; j++) {
+                            if (useTime[j] < minTime) {
+                                minTime = useTime[j];
+                                victim = j;
+                            }
+                        }
+                    }
+                    frames[victim] = page;
+                    useTime[victim] = i + 1;
+                    faults++;
+                }
+                steps.push({ frames: [...frames], page, isFault });
+            }
+
+            return { faults, steps };
+        }
+
+        // Find optimal victim
+        function findOptimalVictim(frames, numCurrent, refString, numPages, currentIdx) {
+            let farthest = -1, victim = 0;
+            for (let i = 0; i < numCurrent; i++) {
+                let nextUse = numPages;
+                for (let j = currentIdx + 1; j < numPages; j++) {
+                    if (frames[i] === refString[j]) {
+                        nextUse = j;
+                        break;
+                    }
+                }
+                if (nextUse > farthest) {
+                    farthest = nextUse;
+                    victim = i;
+                }
+            }
+            return victim;
+        }
+
+        // Optimal Simulation
+        function simulateOptimal(refString, numPages, numFrames) {
+            let frames = Array(numFrames).fill(-1);
+            let faults = 0, numCurrent = 0;
+            let steps = [];
+
+            for (let i = 0; i < numPages; i++) {
+                let page = refString[i];
+                let found = findPage(frames, numCurrent, page);
+                let isFault = found === -1;
+
+                if (found === -1) {
+                    if (numCurrent < numFrames) {
+                        frames[numCurrent++] = page;
+                    } else {
+                        let victim = findOptimalVictim(frames, numCurrent, refString, numPages, i);
+                        frames[victim] = page;
+                    }
+                    faults++;
+                }
+                steps.push({ frames: [...frames], page, isFault });
+            }
+
+            return { faults, steps };
+        }
+
+        // Run simulation
+        function runSimulation(algo) {
+            const refInput = document.getElementById('refString').value.trim();
+            numFrames = parseInt(document.getElementById('numFrames').value);
+
+            // Validate inputs
+            if (!refInput || numFrames < 1 || numFrames > 10) {
+                alert('Please enter a valid reference string and number of frames (1-10).');
+                return;
+            }
+
+            refString = refInput.split(' ').map(Number).filter(n => !isNaN(n));
+            if (refString.length === 0) {
+                alert('Please enter a valid reference string (space-separated numbers).');
+                return;
+            }
+
+            document.getElementById('status').textContent = `Processing ${algo} simulation...`;
+            disableButtons(true);
+
+            setTimeout(() => {
+                let result;
+                switch (algo) {
+                    case 'FIFO':
+                        result = simulateFIFO(refString, refString.length, numFrames);
+                        break;
+                    case 'LRU':
+                        result = simulateLRU(refString, refString.length, numFrames);
+                        break;
+                    case 'OPTIMAL':
+                        result = simulateOptimal(refString, refString.length, numFrames);
+                        break;
+                }
+
+                simulationSteps = result.steps;
+                currentStep = -1;
+                document.getElementById('stepSlider').max = simulationSteps.length - 1;
+                document.getElementById('stepSlider').value = 0;
+                document.getElementById('prevStep').classList.add('hidden');
+                document.getElementById('nextStep').classList.remove('hidden');
+                document.getElementById('status').textContent = `Simulation for ${algo}: Step 0 / ${simulationSteps.length}`;
+
+                // Update results table
+                const hitRatio = (1 - result.faults / refString.length) * 100;
+                const tbody = document.getElementById('resultsBody');
+                const row = tbody.querySelector(`tr[data-algo="${algo}"]`) || document.createElement('tr');
+                row.setAttribute('data-algo', algo);
+                row.className = 'fade-in';
+                row.innerHTML = `<td class="border p-3">${algo}</td><td class="border p-3">${result.faults}</td><td class="border p-3">${hitRatio.toFixed(2)}</td>`;
+                if (!tbody.querySelector(`tr[data-algo="${algo}"]`)) tbody.appendChild(row);
+
+                nextStep();
+                disableButtons(false);
+            }, 100);
+        }
+
+        // Reset simulation
+        function resetSimulation() {
+            simulationSteps = [];
+            currentStep = -1;
+            refString = [];
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('status').textContent = 'Enter inputs and click a button to start';
+            document.getElementById('prevStep').classList.add('hidden');
+            document.getElementById('nextStep').classList.add('hidden');
+            document.getElementById('stepSlider').max = 0;
+            document.getElementById('stepSlider').value = 0;
+            document.getElementById('resultsBody').innerHTML = '';
+            document.getElementById('refString').value = '7 0 1 2 0 3 0 4 2 3 0 3 2';
+            document.getElementById('numFrames').value = '4';
+        }
+
+        // Navigate steps
+        function prevStep() {
+            if (currentStep > 0) {
+                currentStep--;
+                updateStep(currentStep);
+            }
+        }
+
+        function nextStep() {
+            if (currentStep < simulationSteps.length - 1) {
+                currentStep++;
+                updateStep(currentStep);
+            }
+        }
+
+        function updateStep(step) {
+            currentStep = parseInt(step);
+            const stepData = simulationSteps[currentStep];
+            drawMemory(stepData.frames, numFrames, stepData.page, stepData.isFault);
+            document.getElementById('status').textContent = `Simulation: Step ${currentStep + 1} / ${simulationSteps.length}`;
+            document.getElementById('stepSlider').value = currentStep;
+            document.getElementById('prevStep').classList.toggle('hidden', currentStep === 0);
+            document.getElementById('nextStep').classList.toggle('hidden', currentStep === simulationSteps.length - 1);
+        }
+
+        // Disable/enable buttons
+        function disableButtons(disable) {
+            document.querySelectorAll('.btn').forEach(btn => btn.disabled = disable);
+        }
+    </script>
+</body>
+</html>
